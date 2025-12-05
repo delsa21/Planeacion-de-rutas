@@ -76,7 +76,7 @@ if st.session_state['mapa_listo']:
 
     # Comprar Algoritmos
     elif opcion == "Comparar Algoritmos":
-        st.subheader("Comparativa (BFS, DFS, A*, UCS)")
+        st.subheader("Comparativa (BFS, DFS, A*, IDDFS, UCS)")
         st.write("Evalúa diferentes estrategias de búsqueda entre pares de nodos.")
         st.info("Nota: Se probarán rutas cortas para agilidad en la demo.")
 
