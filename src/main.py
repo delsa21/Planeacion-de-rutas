@@ -7,7 +7,7 @@ import sys
 import osmnx as ox
 from simpleai.search import astar
 
-# --- CORRECCIÓN DE RUTAS ---
+# Ajustar path para importar módulos de src/
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Importamos tus módulos
@@ -16,24 +16,20 @@ from src.testRutas import run_routing_tests
 from src.voronoi import GestorHospitales
 from src.problemaRuta import crear_problema
 
-# --- CONFIGURACIÓN DE PÁGINA ---
+# Interfaz
 st.set_page_config(page_title="Rutas Rápidas", layout="centered")
-
-# --- TÍTULO ---
-st.title("Proyecto: Implementación de una plataforma de planeación de rutas a partir de algoritmos de búsqueda")
-st.write("Sistema optimizado para demostraciones ágiles.")
-
-# --- PASO 1: CARGAR EL MAPA ---
+st.title("Proyecto: Planeación de Rutas")
 st.header("1. Cargar el Mapa")
+
+# Variable global para el lugar, para usarla en Voronoi también
+PLACE_DEFAULT = "Tec de Monterrey campus Guadalajara, Zapopan, Jalisco, México"
 
 if 'mapa_listo' not in st.session_state:
     st.session_state['mapa_listo'] = False
 
-if st.button("📍 Cargar Mapa de Zapopan (1km)"):
-    with st.spinner("Descargando mapa pequeño..."):
-        # OPTIMIZACIÓN: dist=1000 (1km) para velocidad
-        place = "Tec de Monterrey campus Guadalajara, Zapopan, Jalisco, México"
-        G = load_graph(place, dist=1000) 
+if st.button("Cargar Mapa de Zapopan"):
+    with st.spinner("Descargando mapa (esto puede tardar unos segundos)..."):
+        G = load_graph(PLACE_DEFAULT, dist=2500) 
         nodes, coords = extract_nodes_coords(G)
         
         st.session_state['grafo'] = G
@@ -41,9 +37,9 @@ if st.button("📍 Cargar Mapa de Zapopan (1km)"):
         st.session_state['coords'] = coords
         st.session_state['mapa_listo'] = True
     
-    st.success(f"¡Mapa cargado! ({len(nodes)} nodos)")
+    st.success(f"¡Mapa cargado correctamente! ({len(nodes)} nodos)")
 
-# --- MENÚ PRINCIPAL ---
+# Menu de opciones
 if st.session_state['mapa_listo']:
     
     G = st.session_state['grafo']
@@ -53,34 +49,39 @@ if st.session_state['mapa_listo']:
     st.divider()
     opcion = st.selectbox(
         "Selecciona una actividad:", 
-        ["Selecciona...", "Pruebas KD-Tree", "Comparar Algoritmos", "Ver Voronoi", "Ver Ruta Visual"]
+        ["Selecciona...", "Pruebas KD-Tree", "Comparar Algoritmos", "Servicio de Emergencias (Voronoi)", "Ver Ruta Visual"]
     )
 
-    # --- OPCIÓN A: KD-TREE ---
+    # Pruebas KD-Tree 
     if opcion == "Pruebas KD-Tree":
-        st.subheader("🌳 Rendimiento de Búsqueda")
-        if st.button("Ejecutar Test"):
-            # CORRECCIÓN: No pasamos 'nodes' ni 'coords', la función los obtiene sola
+        st.subheader("Rendimiento de Búsqueda (KD-Tree vs Fuerza Bruta)")
+        st.write("Compara el tiempo de búsqueda del nodo más cercano a una coordenada.")
+        
+        if st.button("Ejecutar Benchmark"):
+            # Llama a la función de test en kdtree.py
             run_tests_kdtree(G, n_tests=20, out_csv="datos/kdtree_fast.csv")
             
             try:
                 df = pd.read_csv("datos/kdtree_fast.csv")
                 st.dataframe(df)
-                # Intentar graficar según los nombres de columna que genere tu versión
-                if 'time_kdtree_s' in df.columns:
-                    st.line_chart(df[['time_kdtree_s', 'time_bruteforce_s']])
-                elif 'tiempo_kdtree_seg' in df.columns:
-                    st.line_chart(df[['tiempo_kdtree_seg', 'tiempo_bruteforce_seg']])
+                
+                # Graficar tiempos si las columnas existen
+                cols_tiempo = [c for c in df.columns if 'time' in c]
+                if len(cols_tiempo) >= 2:
+                    st.line_chart(df[cols_tiempo])
+                
+                st.info("Nota: Los tiempos pueden ser 0.0 si la muestra es pequeña y la CPU muy rápida.")
             except Exception as e:
                 st.error(f"Error leyendo resultados: {e}")
 
-    # --- OPCIÓN B: COMPARAR ALGORITMOS ---
+    # Comprar Algoritmos
     elif opcion == "Comparar Algoritmos":
-        st.subheader("📊 Comparativa (BFS, DFS, A*, UCS)")
-        st.info("Nota: Se probarán rutas cortas para evitar demoras.")
+        st.subheader("Comparativa (BFS, DFS, A*, UCS)")
+        st.write("Evalúa diferentes estrategias de búsqueda entre pares de nodos.")
+        st.info("Nota: Se probarán rutas cortas para agilidad en la demo.")
 
         if st.button("Calcular Rutas"):
-            with st.spinner("Procesando..."):
+            with st.spinner("Procesando algoritmos..."):
                 run_routing_tests(G, num_pairs=3, out_csv="datos/rutas_fast.csv")
                 
                 try:
@@ -89,47 +90,66 @@ if st.session_state['mapa_listo']:
                 except:
                     st.error("No se generaron datos. Verifica testRutas.py.")
 
-    # --- OPCIÓN C: VORONOI ---
-    elif opcion == "Ver Voronoi":
-        st.subheader("🏥 Hospitales (Voronoi)")
-        n_hosp = st.slider("Cantidad de Hospitales", 3, 8, 5)
+    # Voronoi
+    elif opcion == "Servicio de Emergencias (Voronoi)":
+        st.subheader("Hospitales Cercanos")
+        st.markdown("""
+        Este módulo busca hospitales reales en OSM y divide el mapa en regiones de Voronoi.
+        Cualquier emergencia dentro de una región será asignada al hospital correspondiente.
+        """)
         
-        if st.button("Generar Diagrama"):
+        usar_reales = st.checkbox("Buscar hospitales reales en OpenStreetMap", value=True)
+        
+        if st.button("Generar Diagrama de Voronoi"):
             gh = GestorHospitales(G)
-            gh.cargar_hospitales_ficticios(n=n_hosp)
             
-            # Emergencia simulada
-            t_lat, t_lon = coords[0]
-            hosp, dist = gh.encontrar_hospital_cercano(t_lat, t_lon)
-            st.success(f"Ir a: {hosp['nombre']} ({dist:.0f}m)")
+            if usar_reales:
+                with st.spinner("Descargando hospitales reales..."):
+                    gh.cargar_hospitales_reales(PLACE_DEFAULT, dist=4500)
+            else:
+                gh.cargar_hospitales_ficticios(n=5)
             
-            # Gráfica
-            import numpy as np
-            from scipy.spatial import Voronoi, voronoi_plot_2d
-            points = np.array(gh.coords_hosp)
-            vor = Voronoi(points)
-            fig, ax = plt.subplots()
-            voronoi_plot_2d(vor, ax=ax, show_vertices=False, line_colors='orange')
-            ax.plot(points[:, 0], points[:, 1], 'ko')
-            st.pyplot(fig)
+            # Simular emergencia en la posición del primer nodo (solo como ejemplo)
+            if len(gh.hospitales) > 0:
+                # Tomamos un punto arbitrario del mapa como "ubicación del usuario"
+                idx_random = random.randint(0, len(coords)-1)
+                t_lat, t_lon = coords[idx_random]
+                
+                hosp, dist = gh.encontrar_hospital_cercano(t_lat, t_lon)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.error(f"Emergencia reportada en:\nLat: {t_lat:.4f}, Lon: {t_lon:.4f}")
+                with col2:
+                    st.success(f"Ir al hospital:\n**{hosp['nombre']}**\nDistancia: {dist:.0f} metros")
+                
+                # Gráfica
+                fig = gh.visualizar_voronoi()
+                if fig:
+                    st.pyplot(fig)
+            else:
+                st.warning("No se encontraron hospitales para generar el diagrama.")
 
-    # --- OPCIÓN D: RUTA VISUAL ---
+    # Ruta Visual
     elif opcion == "Ver Ruta Visual":
-        st.subheader("📍 Ruta A* en Mapa")
+        st.subheader("Visualizador de Rutas (A*)")
         if st.button("Generar Ruta Aleatoria"):
             origen = random.choice(nodes)
             destino = random.choice(nodes)
             
+            st.write(f"Calculando ruta de nodo {origen} a {destino}...")
             problema = crear_problema(G, origen, destino)
             resultado = astar(problema, graph_search=True)
             
             if resultado:
-                st.success(f"Costo: {resultado.cost:.1f}m")
+                st.success(f"¡Ruta encontrada! Costo: {resultado.cost:.1f}m")
                 camino = [s for a, s in resultado.path()]
+                
+                # Graficar sobre el mapa
                 fig, ax = ox.plot_graph_route(G, camino, node_size=0, bgcolor='white', show=False, close=False)
                 st.pyplot(fig)
             else:
-                st.warning("Puntos desconectados. Intenta de nuevo.")
+                st.warning("Puntos desconectados o inalcanzables. Intenta de nuevo.")
 
 else:
-    st.info("👆 Carga el mapa para empezar.")
+    st.info("Por favor, carga el mapa usando el botón superior para empezar.")
