@@ -29,7 +29,7 @@ if 'mapa_listo' not in st.session_state:
 
 if st.button("Cargar Mapa de Zapopan"):
     with st.spinner("Descargando mapa (esto puede tardar unos segundos)..."):
-        G = load_graph(PLACE_DEFAULT, dist=2500) 
+        G = load_graph(PLACE_DEFAULT, dist=5000) 
         nodes, coords = extract_nodes_coords(G)
         
         st.session_state['grafo'] = G
