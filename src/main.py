@@ -20,7 +20,7 @@ from src.problemaRuta import crear_problema
 st.set_page_config(page_title="Rutas Rápidas", layout="centered")
 
 # --- TÍTULO ---
-st.title("🗺️ Proyecto de Rutas (Versión Rápida)")
+st.title("Proyecto: Implementación de una plataforma de planeación de rutas a partir de algoritmos de búsqueda")
 st.write("Sistema optimizado para demostraciones ágiles.")
 
 # --- PASO 1: CARGAR EL MAPA ---
@@ -31,7 +31,7 @@ if 'mapa_listo' not in st.session_state:
 
 if st.button("📍 Cargar Mapa de Zapopan (1km)"):
     with st.spinner("Descargando mapa pequeño..."):
-        # OPTIMIZACIÓN CLAVE: dist=1000 (1km) para que sea rápido
+        # OPTIMIZACIÓN: dist=1000 (1km) para velocidad
         place = "Tec de Monterrey campus Guadalajara, Zapopan, Jalisco, México"
         G = load_graph(place, dist=1000) 
         nodes, coords = extract_nodes_coords(G)
@@ -60,26 +60,34 @@ if st.session_state['mapa_listo']:
     if opcion == "Pruebas KD-Tree":
         st.subheader("🌳 Rendimiento de Búsqueda")
         if st.button("Ejecutar Test"):
-            run_tests_kdtree(G, nodes, coords, n_tests=20, out_csv="datos/kdtree_fast.csv")
-            df = pd.read_csv("datos/kdtree_fast.csv")
-            st.dataframe(df)
-            st.line_chart(df[['tiempo_kdtree_seg', 'tiempo_bruteforce_seg']])
+            # CORRECCIÓN: No pasamos 'nodes' ni 'coords', la función los obtiene sola
+            run_tests_kdtree(G, n_tests=20, out_csv="datos/kdtree_fast.csv")
+            
+            try:
+                df = pd.read_csv("datos/kdtree_fast.csv")
+                st.dataframe(df)
+                # Intentar graficar según los nombres de columna que genere tu versión
+                if 'time_kdtree_s' in df.columns:
+                    st.line_chart(df[['time_kdtree_s', 'time_bruteforce_s']])
+                elif 'tiempo_kdtree_seg' in df.columns:
+                    st.line_chart(df[['tiempo_kdtree_seg', 'tiempo_bruteforce_seg']])
+            except Exception as e:
+                st.error(f"Error leyendo resultados: {e}")
 
     # --- OPCIÓN B: COMPARAR ALGORITMOS ---
     elif opcion == "Comparar Algoritmos":
         st.subheader("📊 Comparativa (BFS, DFS, A*, UCS)")
         st.info("Nota: Se probarán rutas cortas para evitar demoras.")
-        
+
         if st.button("Calcular Rutas"):
             with st.spinner("Procesando..."):
-                # Ejecuta la versión optimizada de testRutas
                 run_routing_tests(G, num_pairs=3, out_csv="datos/rutas_fast.csv")
-            
-            try:
-                df = pd.read_csv("datos/rutas_fast.csv")
-                st.dataframe(df)
-            except:
-                st.error("No se generaron datos. Verifica que testRutas.py esté actualizado.")
+                
+                try:
+                    df = pd.read_csv("datos/rutas_fast.csv")
+                    st.dataframe(df)
+                except:
+                    st.error("No se generaron datos. Verifica testRutas.py.")
 
     # --- OPCIÓN C: VORONOI ---
     elif opcion == "Ver Voronoi":

@@ -1,42 +1,154 @@
-#src\testRutas.py
 """
 testRutas.py
 -------------
-Pruebas oficiales del Componente 2 del proyecto.
+Incluye dos modos:
 
-Optimizado:
- - Carga rápida del grafo desde graphml
- - Solo genera CSV si no existen
- - Solo genera gráficas si no existen
- - Evita ejecuciones repetidas de 75 búsquedas
+1. MODO OFFLINE (if __name__ == "__main__")
+   - Descarga / carga grafo graphml
+   - Selecciona rutas por buckets short/medium/long
+   - Ejecuta 75 pruebas
+   - Genera CSV y gráficas
+
+2. MODO STREAMLIT (función run_routing_tests)
+   - Usa grafo ya cargado
+   - Genera pruebas rápidas BFS/DFS/UCS/A*
+   - Crea CSV simple sin gráficas
 """
 
 from __future__ import annotations
 import os
 import csv
+import time
+import math
+import random
 import matplotlib.pyplot as plt
 
 import osmnx as ox
+from simpleai.search import (
+    breadth_first,
+    depth_first,
+    uniform_cost,
+    astar
+)
+
+# ======================================================
+# IMPORTS DEL PROYECTO
+# ======================================================
 from src.problemaRuta import (
     select_node_pairs_by_distance,
     evaluate_algorithms_on_pairs,
+    crear_problema
 )
 from src.utils import ensure_dir, save_csv
 
 
+# ======================================================
+# CONFIGURACIÓN GENERAL
+# ======================================================
 DATA_DIR = "datos"
 ensure_dir(DATA_DIR)
 
 GRAPH_PATH = os.path.join(DATA_DIR, "grafo.graphml")
 
 PLACE = "Tec de Monterrey campus Guadalajara, Zapopan, México"
-DIST = 3000     # optimizado
+DIST = 3000
 NTYPE = "drive"
 
 
-# ===============================
-# CARGA / GUARDADO DEL GRAFO
-# ===============================
+# ======================================================
+# FUNCIÓN STREAMLIT
+# ======================================================
+def run_routing_tests(G, num_pairs=5, out_csv="datos/rutas_fast.csv"):
+    """
+    Función simplificada y compatible con Streamlit.
+    Ejecuta comparativa rápida de BFS, DFS, UCS y A*.
+
+    - No descarga mapas
+    - No genera gráficas
+    - Solo guarda un CSV
+    """
+    print("\n[testRutas] Ejecutando prueba rápida STREAMLIT\n")
+
+    nodes = list(G.nodes())
+    results = []
+
+    algorithms = [
+        ("BFS", breadth_first),
+        ("DFS", depth_first),
+        ("UCS", uniform_cost),
+        ("A*", astar),
+    ]
+
+    # seguridad para evitar rutas enormes con DFS
+    def distancia(G, n1, n2):
+        x1, y1 = G.nodes[n1]["x"], G.nodes[n1]["y"]
+        x2, y2 = G.nodes[n2]["x"], G.nodes[n2]["y"]
+        return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
+    count = 0
+    intentos = 0
+    max_intentos = num_pairs * 30
+
+    while count < num_pairs and intentos < max_intentos:
+        intentos += 1
+        o = random.choice(nodes)
+        d = random.choice(nodes)
+
+        # filtro rápido
+        try:
+            d_aprox = distancia(G, o, d)
+        except:
+            continue
+
+        if o == d or d_aprox > 800:
+            continue
+
+        count += 1
+        print(f"[Par {count}] distancia aprox: {d_aprox:.1f} m")
+
+        problema = crear_problema(G, o, d)
+
+        for name, func in algorithms:
+            print(f"  -> {name}", end=" ", flush=True)
+            t0 = time.time()
+
+            try:
+                res = func(problema, graph_search=True)
+                t = time.time() - t0
+
+                results.append({
+                    "test_id": count,
+                    "origen": o,
+                    "destino": d,
+                    "algoritmo": name,
+                    "tiempo_s": t,
+                    "costo": res.cost if res else None,
+                })
+
+                print(f"OK {t:.2f}s")
+
+            except Exception as e:
+                print("ERROR")
+                results.append({
+                    "test_id": count,
+                    "origen": o,
+                    "destino": d,
+                    "algoritmo": name,
+                    "tiempo_s": -1,
+                    "error": str(e),
+                })
+
+    ensure_dir("datos")
+    save_csv(results, out_csv)
+
+    print(f"\n[testRutas] Resultados guardados en {out_csv}")
+    return out_csv
+
+
+
+# ======================================================
+# MODO OFFLINE FULL (original)
+# ======================================================
 def cargar_grafo():
     if os.path.exists(GRAPH_PATH):
         print("[testRutas] Cargando grafo desde archivo...")
@@ -51,9 +163,6 @@ def cargar_grafo():
     return G
 
 
-# ===============================
-# GRAFICAR (solo si no existe)
-# ===============================
 def graficar_resultados(df, titulo, nombre_archivo):
     out_path = os.path.join(DATA_DIR, nombre_archivo)
 
@@ -78,9 +187,9 @@ def graficar_resultados(df, titulo, nombre_archivo):
     print(f"[testRutas] Gráfica generada: {nombre_archivo}")
 
 
-# ===============================
-# MAIN
-# ===============================
+# ======================================================
+# EJECUCIÓN COMO SCRIPT (offline normal)
+# ======================================================
 if __name__ == "__main__":
     print("\n====================================")
     print("     TEST DE ALGORITMOS OPTIMIZADO  ")
@@ -95,20 +204,14 @@ if __name__ == "__main__":
     medium_pairs = buckets["medium"]
     long_pairs = buckets["long"]
 
-    print(" SHORT :", short_pairs)
-    print(" MEDIUM:", medium_pairs)
-    print(" LONG  :", long_pairs)
-
     # ------------------------------
     # SHORT
     # ------------------------------
     out_short = os.path.join(DATA_DIR, "resultados_short.csv")
     if os.path.exists(out_short):
-        print("[testRutas] CSV short existente, cargando…")
         with open(out_short, encoding="utf-8") as f:
             r_short = list(csv.DictReader(f))
     else:
-        print("[testRutas] Ejecutando pruebas SHORT…")
         r_short = evaluate_algorithms_on_pairs(G, short_pairs, out_csv=out_short)
 
     # ------------------------------
@@ -116,11 +219,9 @@ if __name__ == "__main__":
     # ------------------------------
     out_medium = os.path.join(DATA_DIR, "resultados_medium.csv")
     if os.path.exists(out_medium):
-        print("[testRutas] CSV medium existente, cargando…")
         with open(out_medium, encoding="utf-8") as f:
             r_medium = list(csv.DictReader(f))
     else:
-        print("[testRutas] Ejecutando pruebas MEDIUM…")
         r_medium = evaluate_algorithms_on_pairs(G, medium_pairs, out_csv=out_medium)
 
     # ------------------------------
@@ -128,54 +229,22 @@ if __name__ == "__main__":
     # ------------------------------
     out_long = os.path.join(DATA_DIR, "resultados_long.csv")
     if os.path.exists(out_long):
-        print("[testRutas] CSV long existente, cargando…")
         with open(out_long, encoding="utf-8") as f:
             r_long = list(csv.DictReader(f))
     else:
-        print("[testRutas] Ejecutando pruebas LONG…")
         r_long = evaluate_algorithms_on_pairs(G, long_pairs, out_csv=out_long)
 
     # ------------------------------
-    # CSV COMBINADO
+    # COMBINADO & GRÁFICAS
     # ------------------------------
-    print("\n[testRutas] Generando CSV combinado…")
-
     combined = r_short + r_medium + r_long
 
     out_all = os.path.join(DATA_DIR, "resultados_todo.csv")
     save_csv(combined, out_all)
 
-    print("[testRutas] CSV combinado guardado:", out_all)
+    graficar_resultados(r_short, "SHORT (<1000m)", "grafica_short.png")
+    graficar_resultados(r_medium, "MEDIUM (1000-5000m)", "grafica_medium.png")
+    graficar_resultados(r_long, "LONG (>5000m)", "grafica_long.png")
+    graficar_resultados(combined, "GLOBAL", "grafica_global.png")
 
-    # ------------------------------
-    # GRÁFICAS
-    # ------------------------------
-    print("\n[testRutas] Generando gráficas…")
-
-    graficar_resultados(r_short, "Tiempos SHORT (<1000m)", "grafica_tiempos_short.png")
-    graficar_resultados(r_medium, "Tiempos MEDIUM (1000-5000m)", "grafica_tiempos_medium.png")
-    graficar_resultados(r_long, "Tiempos LONG (>5000m)", "grafica_tiempos_long.png")
-    graficar_resultados(combined, "Tiempos Globales", "grafica_tiempos_global.png")
-
-    # ------------------------------
-    # RESUMEN
-    # ------------------------------
-    print("\n====================================")
-    print("       RESUMEN PARA EL REPORTE      ")
-    print("====================================")
-
-    def resumen(nombre, results):
-        print(f"\n-- {nombre.upper()} --")
-        algs = {}
-        for r in results:
-            alg = r["algorithm"]
-            algs.setdefault(alg, []).append(float(r["time_s"]))
-
-        for a, vals in algs.items():
-            print(f" {a:5s} promedio = {sum(vals)/len(vals):.4f}s")
-
-    resumen("short", r_short)
-    resumen("medium", r_medium)
-    resumen("long", r_long)
-
-    print("\n[testRutas] Listo. Script optimizado terminado.\n")
+    print("\n[testRutas] Script offline terminado.\n")
